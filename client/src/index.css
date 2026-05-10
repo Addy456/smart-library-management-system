@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== THEME CSS VARIABLES ===== */
+:root {
+  /* Light mode (default) */
+  --color-surface: #f8fafc;
+  --color-surface-100: #f1f5f9;
+  --color-surface-200: #e2e8f0;
+  --color-surface-300: #cbd5e1;
+  --color-surface-400: #94a3b8;
+  --hero-gradient: linear-gradient(135deg, #f8fafc 0%, #ede9fe 50%, #f0f9ff 100%);
+}
+
+:root.dark {
+  /* Dark mode */
+  --color-surface: #0B0F1A;
+  --color-surface-100: #0F1629;
+  --color-surface-200: #131B33;
+  --color-surface-300: #1A2340;
+  --color-surface-400: #222D4D;
+  --hero-gradient: linear-gradient(135deg, #0B0F1A 0%, #1A0B2E 50%, #0B0F1A 100%);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Prevent horizontal overflow on mobile */
+html, body {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--color-surface);
+  color: #334155;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dark body {
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
+/* ===== MOBILE TOUCH OPTIMIZATION ===== */
+@media (max-width: 768px) {
+  /* Ensure minimum tap targets (48px per WCAG) */
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Fix input zoom on iOS (font-size < 16px causes zoom) */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* Hide scrollbars on mobile for horizontal scroll containers */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* ===== FOLDABLE DEVICE SAFE AREA ===== */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* ===== MOBILE TABLE SCROLL HINT ===== */
+.table-scroll-container {
+  -webkit-overflow-scrolling: touch;
+  overflow-x: auto;
+}
+
+/* ===== LANDSCAPE MODE FIXES ===== */
+@media (max-height: 500px) and (orientation: landscape) {
+  .modal-landscape {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
+
+/* Scrollbar Styling - Light Mode */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.3);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.5);
+}
+
+/* Scrollbar Styling - Dark Mode */
+.dark ::-webkit-scrollbar-track {
+  background: #0B0F1A;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.4);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.6);
+}
+
+/* Selection - Light Mode */
+::selection {
+  background: rgba(124, 58, 237, 0.15);
+  color: #1e293b;
+}
+
+/* Selection - Dark Mode */
+.dark ::selection {
+  background: rgba(124, 58, 237, 0.3);
+  color: #fff;
+}

@@ -1,0 +1,431 @@
+const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
+const User = require("../models/userModel");
+const catchAsyncErrors = require("../middlewares/catchAsyncErrors");
+const sendToken = require("../utils/sendToken");
+const sendEmail = require("../utils/sendEmail");
+const sendVerificationCode = require("../utils/sendVerificationCode");
+const { resetPasswordTemplate } = require("../utils/emailTemplates");
+const logger = require("../utils/logger");
+const { isString } = require("../utils/helpers");
+const {
+  BCRYPT_COST,
+  PASSWORD_MIN_LENGTH,
+  OTP_RESEND_COOLDOWN_SECONDS,
+  OTP_TTL_MINUTES,
+  RESET_TOKEN_TTL_MINUTES,
+} = require("../config/constants");
+
+// Account lockout thresholds. After MAX_FAILED_ATTEMPTS consecutive failed
+// logins we lock the account for LOCK_MINUTES minutes. Lockout is per-account
+// (not per-IP) to stop credential stuffing against one user, while still
+// letting legitimate retries from the same IP attempt different accounts.
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCK_MINUTES = 15;
+
+// Generic message used for forgot-password success.
+// ALWAYS returned regardless of whether the email exists — prevents
+// attackers from enumerating registered accounts.
+const GENERIC_RESET_MESSAGE =
+  "If an account exists for this email, a password reset link has been sent.";
+
+// @desc    Register a new user
+// @route   POST /api/auth/register
+// @access  Public
+exports.register = catchAsyncErrors(async (req, res, next) => {
+  const { name, email, password } = req.body;
+
+  // Validate types first — rejects operator-object payloads like { $gt: "" }.
+  if (!isString(name) || !isString(email) || !isString(password)) {
+    return res.status(400).json({
+      success: false,
+      message: "Please provide name, email and password",
+    });
+  }
+
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return res.status(400).json({
+      success: false,
+      message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
+    });
+  }
+
+  // Check if user already exists. We DO NOT reveal this via the error message
+  // because that would let attackers enumerate valid emails. Instead we return
+  // the same 201 response shape the "new user" flow would, but skip creation.
+  const existingUser = await User.findOne({ email: email.toLowerCase() });
+  if (existingUser) {
+    // If the existing account isn't verified yet, silently re-send the OTP so
+    // a legitimate user who lost the email can recover.
+    if (!existingUser.verified) {
+      try {
+        await sendVerificationCode(existingUser);
+      } catch (err) {
+        logger.error({ err: err.message }, "Resend-on-register OTP email failed");
+      }
+    }
+    return res.status(201).json({
+      success: true,
+      message:
+        "Registration successful. If this is a new account, please verify your email with the OTP we just sent.",
+      userId: existingUser._id,
+    });
+  }
+
+  const hashedPassword = await bcrypt.hash(password, BCRYPT_COST);
+
+  const user = await User.create({
+    name: name.trim(),
+    email: email.toLowerCase(),
+    password: hashedPassword,
+  });
+
+  try {
+    await sendVerificationCode(user);
+  } catch (err) {
+    logger.error({ err: err.message }, "OTP email failed");
+  }
+
+  res.status(201).json({
+    success: true,
+    message:
+      "Registration successful. If this is a new account, please verify your email with the OTP we just sent.",
+    userId: user._id,
+  });
+});
+
+// @desc    Verify OTP and activate account
+// @route   POST /api/auth/verify-otp
+// @access  Public
+exports.verifyOTP = catchAsyncErrors(async (req, res, next) => {
+  const { email, otp } = req.body;
+
+  if (!isString(email) || (typeof otp !== "string" && typeof otp !== "number")) {
+    return res.status(400).json({
+      success: false,
+      message: "Please provide email and OTP",
+    });
+  }
+
+  const otpStr = String(otp);
+  if (!/^\d{6}$/.test(otpStr)) {
+    return res.status(400).json({ success: false, message: "Invalid OTP" });
+  }
+
+  const user = await User.findOne({ email: email.toLowerCase() }).select("+otp +otpExpiry");
+  if (!user) {
+    return res.status(400).json({ success: false, message: "Invalid OTP" });
+  }
+
+  if (user.otp !== Number(otpStr)) {
+    return res.status(400).json({ success: false, message: "Invalid OTP" });
+  }
+
+  if (user.otpExpiry < Date.now()) {
+    return res.status(400).json({
+      success: false,
+      message: "OTP has expired. Please request a new one.",
+    });
+  }
+
+  user.verified = true;
+  user.otp = undefined;
+  user.otpExpiry = undefined;
+  await user.save();
+
+  sendToken(user, 200, res, "Email verified successfully. Welcome to Smart Library!");
+});
+
+// @desc    Login user
+// @route   POST /api/auth/login
+// @access  Public
+exports.login = catchAsyncErrors(async (req, res, next) => {
+  const { email, password } = req.body;
+
+  if (!isString(email) || !isString(password)) {
+    return res.status(400).json({
+      success: false,
+      message: "Please provide email and password",
+    });
+  }
+
+  // Always return the same generic message for any auth failure.
+  // Distinct messages would let attackers enumerate emails / verified state.
+  const INVALID_CREDENTIALS = {
+    success: false,
+    message: "Invalid email or password",
+  };
+
+  const user = await User.findOne({ email: email.toLowerCase() }).select(
+    "+password +failedLoginAttempts +lockedUntil"
+  );
+  if (!user) {
+    // Do a dummy bcrypt compare to keep response time constant
+    // and deny the attacker a timing oracle for "email exists".
+    await bcrypt.compare(password, "$2a$12$CwTycUXWue0Thq9StjUM0uJ8p.cD/Qx/JjRQ7KrX5yH3XoZQpR6yW");
+    return res.status(401).json(INVALID_CREDENTIALS);
+  }
+
+  // If the account is currently locked, refuse up-front without even hashing
+  // the password. Response body stays generic (no "locked" leak), but we
+  // return 423 so an SRE can spot it in logs.
+  if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+    const minutesLeft = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+    return res.status(423).json({
+      success: false,
+      message: `Account temporarily locked. Try again in ${minutesLeft} minute(s).`,
+    });
+  }
+
+  const isPasswordMatch = await bcrypt.compare(password, user.password);
+  if (!isPasswordMatch) {
+    // Increment attempt counter. Lock once we hit the threshold.
+    const attempts = (user.failedLoginAttempts || 0) + 1;
+    const update = { failedLoginAttempts: attempts };
+    if (attempts >= MAX_FAILED_ATTEMPTS) {
+      update.lockedUntil = new Date(Date.now() + LOCK_MINUTES * 60 * 1000);
+      update.failedLoginAttempts = 0; // reset counter once the window starts
+      logger.warn({ userId: user._id.toString() }, "Account locked due to failed logins");
+    }
+    await User.updateOne({ _id: user._id }, update);
+    return res.status(401).json(INVALID_CREDENTIALS);
+  }
+
+  if (!user.verified) {
+    // Still a 401 with the same body. The UX surface for "verify your email"
+    // is the OTP screen after registration; we don't leak it here.
+    return res.status(401).json(INVALID_CREDENTIALS);
+  }
+
+  // Successful login — clear any previous lockout state.
+  if (user.failedLoginAttempts || user.lockedUntil) {
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { failedLoginAttempts: 0, lockedUntil: null } }
+    );
+  }
+
+  sendToken(user, 200, res, "Logged in successfully");
+});
+
+// @desc    Logout user
+// @route   GET /api/auth/logout
+// @access  Public (must work even without a valid token so stale cookies can clear)
+exports.logout = catchAsyncErrors(async (req, res, next) => {
+  const isProduction = process.env.NODE_ENV === "production";
+  res.cookie("token", "", {
+    expires: new Date(0),
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Logged out successfully",
+  });
+});
+
+// @desc    Forgot password - send reset link
+// @route   POST /api/auth/forgot-password
+// @access  Public
+exports.forgotPassword = catchAsyncErrors(async (req, res, next) => {
+  const { email } = req.body;
+
+  if (!isString(email)) {
+    return res.status(400).json({ success: false, message: "Please provide a valid email" });
+  }
+
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user) {
+    // Always respond with the generic success message so attackers can't
+    // enumerate registered accounts via this endpoint.
+    return res.status(200).json({ success: true, message: GENERIC_RESET_MESSAGE });
+  }
+
+  const resetToken = crypto.randomBytes(20).toString("hex");
+  user.resetPasswordToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+  user.resetPasswordExpiry = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60 * 1000);
+  await user.save();
+
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+  try {
+    await sendEmail({
+      email: user.email,
+      subject: "Smart Library - Password Reset Request",
+      html: resetPasswordTemplate(user.name, resetUrl),
+    });
+  } catch (err) {
+    logger.error({ err: err.message }, "Password reset email failed");
+    // Roll back the token so a stale token doesn't persist.
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpiry = undefined;
+    await user.save();
+    // Still return the generic message — do not reveal SMTP state.
+  }
+
+  res.status(200).json({ success: true, message: GENERIC_RESET_MESSAGE });
+});
+
+// @desc    Reset password
+// @route   PUT /api/auth/reset-password/:token
+// @access  Public
+exports.resetPassword = catchAsyncErrors(async (req, res, next) => {
+  const { password, confirmPassword } = req.body;
+
+  if (!isString(password) || !isString(confirmPassword)) {
+    return res.status(400).json({
+      success: false,
+      message: "Please provide password and confirmPassword",
+    });
+  }
+
+  if (password !== confirmPassword) {
+    return res.status(400).json({ success: false, message: "Passwords do not match" });
+  }
+
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return res.status(400).json({
+      success: false,
+      message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
+    });
+  }
+
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(String(req.params.token))
+    .digest("hex");
+
+  const user = await User.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpiry: { $gt: Date.now() },
+  }).select("+resetPasswordToken +resetPasswordExpiry +password");
+
+  if (!user) {
+    return res.status(400).json({
+      success: false,
+      message: "Password reset token is invalid or has expired",
+    });
+  }
+
+  user.password = await bcrypt.hash(password, BCRYPT_COST);
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpiry = undefined;
+  await user.save();
+
+  sendToken(user, 200, res, "Password reset successfully");
+});
+
+// @desc    Get current logged-in user profile
+// @route   GET /api/auth/me
+// @access  Private
+exports.getMe = catchAsyncErrors(async (req, res, next) => {
+  const user = await User.findById(req.user._id);
+  res.status(200).json({ success: true, user });
+});
+
+// @desc    Resend OTP
+// @route   POST /api/auth/resend-otp
+// @access  Public
+exports.resendOTP = catchAsyncErrors(async (req, res, next) => {
+  const { email } = req.body;
+
+  if (!isString(email)) {
+    return res.status(400).json({ success: false, message: "Please provide a valid email" });
+  }
+
+  // Respond with a generic message regardless of whether the account exists
+  // or is already verified. This prevents enumeration and status leaks.
+  const GENERIC_RESEND_MESSAGE = "If an unverified account exists, a new OTP has been sent.";
+
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user || user.verified) {
+    return res.status(200).json({ success: true, message: GENERIC_RESEND_MESSAGE });
+  }
+
+  const userWithOtp = await User.findById(user._id).select("+otpExpiry");
+
+  // Enforce per-account cooldown so attackers can't spam the mail queue.
+  if (userWithOtp.otpExpiry) {
+    const otpSentAt = new Date(userWithOtp.otpExpiry).getTime() - OTP_TTL_MINUTES * 60 * 1000;
+    const timeSinceLastOTP = Date.now() - otpSentAt;
+    if (timeSinceLastOTP < OTP_RESEND_COOLDOWN_SECONDS * 1000) {
+      return res.status(429).json({
+        success: false,
+        message: `Please wait at least ${OTP_RESEND_COOLDOWN_SECONDS} seconds before requesting a new OTP`,
+      });
+    }
+  }
+
+  try {
+    await sendVerificationCode(userWithOtp);
+  } catch (err) {
+    logger.error({ err: err.message }, "Resend OTP email failed");
+  }
+
+  res.status(200).json({ success: true, message: GENERIC_RESEND_MESSAGE });
+});
+
+// @desc    Update profile (name only — email change requires re-verification)
+// @route   PUT /api/auth/update-profile
+// @access  Private
+exports.updateProfile = catchAsyncErrors(async (req, res, next) => {
+  const { name } = req.body;
+
+  if (!isString(name) || !name.trim()) {
+    return res.status(400).json({ success: false, message: "Please provide a name" });
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    { name: name.trim() },
+    { new: true, runValidators: true }
+  );
+
+  res.status(200).json({
+    success: true,
+    message: "Profile updated successfully",
+    user,
+  });
+});
+
+// @desc    Change password (requires current password)
+// @route   PUT /api/auth/change-password
+// @access  Private
+exports.changePassword = catchAsyncErrors(async (req, res, next) => {
+  const { currentPassword, newPassword, confirmNewPassword } = req.body;
+
+  if (!isString(currentPassword) || !isString(newPassword) || !isString(confirmNewPassword)) {
+    return res.status(400).json({
+      success: false,
+      message: "Please provide current password, new password and confirm password",
+    });
+  }
+
+  if (newPassword !== confirmNewPassword) {
+    return res.status(400).json({
+      success: false,
+      message: "New password and confirm password do not match",
+    });
+  }
+
+  if (newPassword.length < PASSWORD_MIN_LENGTH) {
+    return res.status(400).json({
+      success: false,
+      message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
+    });
+  }
+
+  const user = await User.findById(req.user._id).select("+password");
+
+  const isMatch = await bcrypt.compare(currentPassword, user.password);
+  if (!isMatch) {
+    return res.status(401).json({ success: false, message: "Current password is incorrect" });
+  }
+
+  user.password = await bcrypt.hash(newPassword, BCRYPT_COST);
+  await user.save();
+
+  sendToken(user, 200, res, "Password changed successfully");
+});

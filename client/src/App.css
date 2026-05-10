@@ -1,0 +1,125 @@
+/* ===== BUTTON STYLES ===== */
+.btn-primary {
+  @apply bg-gradient-to-r from-violet-600 to-indigo-600 text-white px-6 py-2.5 rounded-xl hover:from-violet-500 hover:to-indigo-500 transition-all duration-300 font-semibold shadow-glow-sm;
+}
+
+.btn-secondary {
+  @apply px-6 py-2.5 rounded-xl transition-all duration-300 font-medium;
+  @apply bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200;
+}
+.dark .btn-secondary {
+  @apply bg-white/5 text-gray-300 border-white/10 hover:bg-white/10;
+}
+
+/* ===== CARD STYLES ===== */
+.card {
+  @apply rounded-2xl p-6 transition-colors duration-300;
+  @apply bg-white shadow-md border border-gray-100;
+}
+.dark .card {
+  @apply bg-white/5 backdrop-blur-xl shadow-glass border-white/10;
+}
+
+/* ===== INPUT FIELD ===== */
+.input-field {
+  @apply w-full px-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all duration-300;
+  @apply bg-white border border-gray-300 text-gray-900 placeholder-gray-400;
+}
+.dark .input-field {
+  @apply bg-white/5 border-white/10 text-white placeholder-gray-500 backdrop-blur-sm;
+}
+
+/* ===== GLASS CARD ===== */
+.glass-card {
+  border-radius: 1.5rem;
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+}
+.dark .glass-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* ===== GRADIENT TEXT ===== */
+.gradient-text {
+  background: linear-gradient(135deg, #7C3AED, #0891B2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ===== THEME TEXT HELPERS ===== */
+.theme-text {
+  @apply text-gray-900;
+}
+.dark .theme-text {
+  @apply text-white;
+}
+
+.theme-text-muted {
+  @apply text-gray-500;
+}
+.dark .theme-text-muted {
+  @apply text-gray-400;
+}
+
+.theme-text-faint {
+  @apply text-gray-400;
+}
+.dark .theme-text-faint {
+  @apply text-gray-500;
+}
+
+/* ===== THEME BACKGROUND HELPERS ===== */
+.theme-bg-subtle {
+  @apply bg-gray-100;
+}
+.dark .theme-bg-subtle {
+  @apply bg-white/5;
+}
+
+.theme-bg-hover:hover {
+  @apply bg-gray-100;
+}
+.dark .theme-bg-hover:hover {
+  @apply bg-white/10;
+}
+
+.theme-border {
+  @apply border-gray-200;
+}
+.dark .theme-border {
+  @apply border-white/10;
+}
+
+.theme-border-light {
+  @apply border-gray-100;
+}
+.dark .theme-border-light {
+  @apply border-white/5;
+}
+
+/* ===== AUTOFILL OVERRIDE ===== */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 30px white inset !important;
+  box-shadow: 0 0 0 30px white inset !important;
+  -webkit-text-fill-color: #111827 !important;
+  caret-color: #111827;
+}
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus,
+.dark textarea:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 30px #131B33 inset !important;
+  box-shadow: 0 0 0 30px #131B33 inset !important;
+  -webkit-text-fill-color: #fff !important;
+  caret-color: #fff;
+}
