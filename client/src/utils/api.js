@@ -5,7 +5,7 @@ import axios from "axios";
 // We never touch the token in JavaScript — this prevents XSS-based
 // token theft even if some downstream component renders user-controlled HTML.
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:4000/api",
+  baseURL: import.meta.env.VITE_API_URL || "https://smart-library-backend-u957.onrender.com/api",
   withCredentials: true, // Send cookies with every request
   headers: {
     "Content-Type": "application/json",
