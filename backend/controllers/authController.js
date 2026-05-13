@@ -4,7 +4,7 @@ const User = require("../models/userModel");
 const catchAsyncErrors = require("../middlewares/catchAsyncErrors");
 const sendToken = require("../utils/sendToken");
 const sendEmail = require("../utils/sendEmail");
-const sendVerificationCode = require("../utils/sendVerificationCode");
+//const sendVerificationCode = require("../utils/sendVerificationCode");
 const { resetPasswordTemplate } = require("../utils/emailTemplates");
 const logger = require("../utils/logger");
 const { isString } = require("../utils/helpers");
@@ -74,23 +74,28 @@ exports.register = catchAsyncErrors(async (req, res, next) => {
 
   const hashedPassword = await bcrypt.hash(password, BCRYPT_COST);
 
-  const user = await User.create({
-    name: name.trim(),
-    email: email.toLowerCase(),
-    password: hashedPassword,
-  });
+ const generatedOTP = Math.floor(100000 + Math.random() * 900000);
 
-  try {
-    await sendVerificationCode(user);
-  } catch (err) {
-    logger.error({ err: err.message }, "OTP email failed");
-  }
+const user = await User.create({
+  name: name.trim(),
+  email: email.toLowerCase(),
+  password: hashedPassword,
+  otp: generatedOTP,
+  otpExpiry: Date.now() + 10 * 60 * 1000,
+});
+
+  // try {
+  //   await sendVerificationCode(user);
+  // } catch (err) {
+  //   logger.error({ err: err.message }, "OTP email failed");
+  // }
 
   res.status(201).json({
     success: true,
     message:
       "Registration successful. If this is a new account, please verify your email with the OTP we just sent.",
     userId: user._id,
+    otp: user.otp,
   });
 });
 
@@ -358,11 +363,11 @@ exports.resendOTP = catchAsyncErrors(async (req, res, next) => {
     }
   }
 
-  try {
-    await sendVerificationCode(userWithOtp);
-  } catch (err) {
-    logger.error({ err: err.message }, "Resend OTP email failed");
-  }
+  // try {
+  //   await sendVerificationCode(userWithOtp);
+  // } catch (err) {
+  //   logger.error({ err: err.message }, "Resend OTP email failed");
+  // }
 
   res.status(200).json({ success: true, message: GENERIC_RESEND_MESSAGE });
 });

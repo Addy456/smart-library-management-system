@@ -5,10 +5,14 @@
 // Parse allowed origins once at startup. FRONTEND_URL supports a
 // comma-separated list (e.g. "http://localhost:5173,http://10.49.206.86:5173")
 // so that the same backend can be tested from both localhost and a local IP.
-const allowedOrigins = (process.env.FRONTEND_URL || "")
-  .split(",")
-  .map((o) => o.trim().replace(/\/$/, ""))
-  .filter(Boolean);
+const allowedOrigins = [
+  "http://localhost:5173",
+
+  ...(process.env.FRONTEND_URL || "")
+    .split(",")
+    .map((o) => o.trim().replace(/\/$/, ""))
+    .filter(Boolean),
+];
 
 /**
  * Validates the Origin header on state-changing requests (POST, PUT, DELETE, PATCH).

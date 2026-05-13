@@ -48,27 +48,60 @@ const VerifyOTP = () => {
     }
   }, [error, dispatch]);
 
+  // const handleVerify = async (e) => {
+  //   e.preventDefault();
+  //   if (!otp || otp.length !== 6) {
+  //     toast.error("Please enter a valid 6-digit OTP");
+  //     return;
+  //   }
+  //   dispatch(verifyOTP({ email, otp }));
+  // };
+
   const handleVerify = async (e) => {
-    e.preventDefault();
-    if (!otp || otp.length !== 6) {
-      toast.error("Please enter a valid 6-digit OTP");
-      return;
-    }
-    dispatch(verifyOTP({ email, otp }));
-  };
+  e.preventDefault();
 
-  const handleResend = async () => {
-    if (!email) {
-      toast.error("Email not found. Please register again.");
-      return;
-    }
-    const result = await dispatch(resendOTP(email));
-    if (result.meta.requestStatus === "fulfilled") {
-      toast.success("OTP resent successfully!");
-      setResendCooldown(60);
-    }
-  };
+  const savedOTP = localStorage.getItem("otp");
 
+  if (!otp || otp.length !== 6) {
+    toast.error("Please enter a valid 6-digit OTP");
+    return;
+  }
+
+  if (otp !== savedOTP) {
+    toast.error("Invalid OTP");
+    return;
+  }
+
+  const result = await dispatch(verifyOTP({ email, otp }));
+
+  if (result.meta.requestStatus === "fulfilled") {
+
+    toast.success("Email verified successfully!");
+
+    localStorage.removeItem("otp");
+    localStorage.removeItem("verifyEmail");
+
+    navigate("/login");
+  }
+};
+
+ 
+const handleResend = async () => {
+
+  if (!email) {
+    toast.error("Email not found. Please register again.");
+    return;
+  }
+
+ await sendOTPEmail(
+  "User",
+  email,
+  localStorage.getItem("otp")
+);
+  toast.success("OTP resent successfully!");
+
+  setResendCooldown(60);
+};
   return (
     <AuthCard
       icon={<ShieldCheck className="w-7 h-7 text-white" />}

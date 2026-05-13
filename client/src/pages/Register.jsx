@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, useNavigate } from "react-router-dom";
 import { register, clearAuthState } from "../redux/slices/authSlice";
+import { sendOTPEmail } from "../utils/sendOTP";
 import toast from "react-hot-toast";
 import { motion } from "framer-motion";
 import { User, Mail, Lock, Eye, EyeOff, UserPlus } from "lucide-react";
@@ -36,12 +37,30 @@ const Register = () => {
       return;
     }
     const result = await dispatch(register({ name: formData.name, email: formData.email, password: formData.password }));
+    // if (result.meta.requestStatus === "fulfilled") {
+    //   toast.success(result.payload.message || "Registration successful!");
+    //   localStorage.setItem("verifyEmail", formData.email);
+    //   dispatch(clearAuthState());
+    //   navigate("/verify-otp");
+    // }
     if (result.meta.requestStatus === "fulfilled") {
-      toast.success(result.payload.message || "Registration successful!");
-      localStorage.setItem("verifyEmail", formData.email);
-      dispatch(clearAuthState());
-      navigate("/verify-otp");
-    }
+
+  localStorage.setItem("otp", result.payload.otp);
+
+    await sendOTPEmail(
+    formData.name,
+    formData.email,
+    result.payload.otp
+);
+
+  toast.success(result.payload.message || "Registration successful!");
+
+  localStorage.setItem("verifyEmail", formData.email);
+
+  dispatch(clearAuthState());
+
+  navigate("/verify-otp");
+}
   };
 
   const inputBase = "w-full pl-10 pr-4 py-2.5 bg-white dark:bg-surface-200 border border-gray-300 dark:border-white/10 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all";

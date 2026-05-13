@@ -65,10 +65,13 @@ app.use(mongoSanitize({ replaceWith: "_" }));
 
 // CORS configuration - allow requests from all configured frontend origins.
 // FRONTEND_URL can be a comma-separated list (e.g. "http://localhost:5173,http://10.49.206.86:5173")
-const allowedOrigins = (process.env.FRONTEND_URL || "")
-  .split(",")
-  .map((o) => o.trim())
-  .filter(Boolean);
+const allowedOrigins = [
+  "http://localhost:5173",
+  ...(process.env.FRONTEND_URL || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean),
+];
 
 app.use(
   cors({
