@@ -5,17 +5,22 @@ let transporter;
 function getTransporter() {
   if (!transporter) {
   transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT),
-  secure: false,
-  family: 4,
+  service: "gmail",
+
   auth: {
     user: process.env.SMTP_MAIL,
     pass: process.env.SMTP_PASSWORD,
   },
-  pool: true,
-  maxConnections: 5,
-  maxMessages: 100,
+
+  family: 4,
+
+  connectionTimeout: 30000,
+  greetingTimeout: 30000,
+  socketTimeout: 30000,
+
+  tls: {
+    rejectUnauthorized: false,
+  },
 });
   }
   return transporter;
